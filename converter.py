@@ -103,7 +103,10 @@ def conv2folder(source, output, depth, force, config):
                 check = True
                 destNew = dest + '/' + name + target
                 if not os.path.isfile(destNew):
-                    func(srcNew, destNew, conf)
+                    try:
+                        func(srcNew, destNew, conf)
+                    except:
+                        print('error', srcNew, destNew)
                 else:
                     break
 
