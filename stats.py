@@ -34,7 +34,7 @@ if __name__ in '__main__':
         output.append("{},file,{}".format(size, file_path[rootlen:]))
 
     extdata = collections.OrderedDict(
-        sorted(extdata.items(), key=lambda t: t[1])
+        sorted(extdata.items(), key=lambda t: "{:06d}".format(t[1]) + str(t[0]))
         )
 
     with open(args.filename, 'w') as f:
