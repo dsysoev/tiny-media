@@ -118,10 +118,13 @@ def create_tasks(source, output, depth, config):
                 ext = ext.lower()
 
                 if ext not in format_dict:
-                    print('{} was skipped (format do not supported)'.format(elem))
+                    # print('{} was skipped (format do not supported)'.format(elem))
                     continue
 
                 out = os.path.join(dest, root[len(src):], name + format_dict[ext][1])
+
+                if os.path.isfile(out):
+                    continue
 
                 if not os.path.isdir(os.path.dirname(out)):
                     os.makedirs(os.path.dirname(out))
@@ -147,6 +150,7 @@ def main(config):
         config=conf
     )
 
+    print('number of tasks : {}'.format(len(tasks)))
     results = Parallel(n_jobs=4, prefer="threads")(
         delayed(task[0])(task[1], task[2], task[3]) for task in tasks)
     print('Done')
