@@ -6,13 +6,22 @@ import shutil
 import argparse
 
 from PIL import Image
+from joblib import Parallel, delayed
 
 
 def conv2gif(src, dest, config):
+
+    if not os.path.isdir(os.path.dirname(dest)):
+        os.makedirs(os.path.dirname(dest))
+
     shutil.copy(src, dest)
     return True
 
 def conv2jpg(src, dest, config):
+
+    if not os.path.isdir(os.path.dirname(dest)):
+        os.makedirs(os.path.dirname(dest))
+
     im = Image.open(src)
     try:
         im = im.convert("RGB")
@@ -23,12 +32,15 @@ def conv2jpg(src, dest, config):
     im.thumbnail(config['size'], Image.BICUBIC)
     try:
         exif = im.info['exif']
-        im.save(dest, "JPEG", exif=exif, quality=85)
+        im.save(dest, "JPEG", exif=exif, quality=config['quality'])
     except:
-        im.save(dest, "JPEG", quality=85)
+        im.save(dest, "JPEG", quality=config['quality'])
     return True
 
 def conv2video(src, dest, config):
+
+    if not os.path.isdir(os.path.dirname(dest)):
+        os.makedirs(os.path.dirname(dest))
 
     # slow VP9
     # first pass
@@ -54,13 +66,17 @@ def conv2video(src, dest, config):
 
 def conv2audio(src, dest, config):
 
+    if not os.path.isdir(os.path.dirname(dest)):
+        os.makedirs(os.path.dirname(dest))
+        
     command = "ffmpeg -i \"{}\" -vn -f ogg -c:a libopus -b:a 96k \
         -map_metadata 0 -threads 8 -y \"{}\"".format(src, dest)
     # command = "ffmpeg -i \"%s\" -vn -ar 44100 -ac 2 -f ogg -acodec libvorbis \
         # -ab 192k -map_metadata 0 -threads 8 -y \"%s\"".format(ini, new)
     os.system(command)
+    return True
 
-def conv2folder(source, output, depth, force, config):
+def create_tasks(source, output, depth, config):
 
     # supported formats
     formats = [
@@ -74,6 +90,12 @@ def conv2folder(source, output, depth, force, config):
         #                 '.mov', '.ts', '.flv', '.avi'], config['audio']),
     ]
 
+    # convert formats to dict structure
+    format_dict = {}
+    for form in formats:
+        for f in form[2]:
+            format_dict[f] = (form[0], form[1], form[3])
+
     src = os.path.dirname(os.path.abspath(source) + '/') + '/'
     dest = os.path.abspath(output) + '/'
 
@@ -85,66 +107,63 @@ def conv2folder(source, output, depth, force, config):
         raise OSError('{} does not exist'.format(src))
 
     if not os.path.isdir(dest):
-        if force or (input('Create {} [y/N]: '.format(dest)) == 'y'):
+        if input('Create {} [y/N]: '.format(dest)) == 'y':
             os.makedirs(dest)
         else:
             sys.exit()
 
-    print('src: {}'.format(src))
+    print('src  : {}\ndest : {}\n'.format(src, dest))
 
-    for elem in sorted(glob.glob(src + '/*')):
-        basename = os.path.basename(elem)
-        name, ext = os.path.splitext(basename)
-        srcNew = src + '/' + basename
+    tasks = []
+    for root, dirs, files in sorted(os.walk(src)):
+        actual_depth = root[len(src):].count(os.sep)
+        if actual_depth < depth:
 
-        if '!' in basename:
-            print('skipped: {}'.format(srcNew))
-            continue
+            foldername = os.path.basename(os.path.normpath(root))
+            if '!' in foldername:
+                print('folder {} was skipped (! exist in name)'.format(root))
+                continue
 
-        check = False
-        if os.path.isdir(elem):
-            destNew = dest + '/' + basename
-            conv2folder(srcNew, destNew, depth - 1, force, config)
-            check = True
+            for f in files:
+                elem = os.path.join(root, f)
+                name, ext = os.path.splitext(os.path.basename(elem))
+                ext = ext.lower()
 
-        for func, target, exts, conf in formats:
-            if ext.lower() in exts:
-                check = True
-                destNew = dest + '/' + name + target
-                if not os.path.isfile(destNew):
-                    try:
-                        func(srcNew, destNew, conf)
-                    except:
-                        print('error', srcNew, destNew)
-                else:
-                    break
+                if ext not in format_dict:
+                    print('{} was skipped (format do not supported)'.format(elem))
+                    continue
 
-        if not check:
-            print('Error file {} type'.format(srcNew))
+                out = os.path.join(dest, root[len(src):], name + format_dict[ext][1])
+                tasks.append((format_dict[ext][0], elem, out, format_dict[ext][2]))
+
+    return tasks
+
 
 def main(config):
 
     conf = {
-        'image': {'size': (1920, 1080)},
+        'image': {'size': (1920, 1080), 'quality': 85},
         'animation': {},
         'video': {},
         'audio': {},
     }
 
-    conv2folder(
+    tasks = create_tasks(
         config.src,
         config.dest,
         depth=config.max_depth,
-        force=config.force,
         config=conf
     )
+
+    results = Parallel(n_jobs=4, prefer="threads")(
+        delayed(task[0])(task[1], task[2], task[3]) for task in tasks)
+    print('Done')
 
 
 if __name__ in '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('src', type=str)
     parser.add_argument('dest', type=str)
-    parser.add_argument('--force', action='store_true')
     parser.add_argument('--max_depth', type=int, default=2)
     args = parser.parse_args()
     main(args)
