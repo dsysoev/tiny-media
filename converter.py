@@ -11,16 +11,10 @@ from joblib import Parallel, delayed
 
 def conv2gif(src, dest, config):
 
-    if not os.path.isdir(os.path.dirname(dest)):
-        os.makedirs(os.path.dirname(dest))
-
     shutil.copy(src, dest)
     return True
 
 def conv2jpg(src, dest, config):
-
-    if not os.path.isdir(os.path.dirname(dest)):
-        os.makedirs(os.path.dirname(dest))
 
     im = Image.open(src)
     try:
@@ -38,9 +32,6 @@ def conv2jpg(src, dest, config):
     return True
 
 def conv2video(src, dest, config):
-
-    if not os.path.isdir(os.path.dirname(dest)):
-        os.makedirs(os.path.dirname(dest))
 
     # slow VP9
     # first pass
@@ -66,9 +57,6 @@ def conv2video(src, dest, config):
 
 def conv2audio(src, dest, config):
 
-    if not os.path.isdir(os.path.dirname(dest)):
-        os.makedirs(os.path.dirname(dest))
-        
     command = "ffmpeg -i \"{}\" -vn -f ogg -c:a libopus -b:a 96k \
         -map_metadata 0 -threads 8 -y \"{}\"".format(src, dest)
     # command = "ffmpeg -i \"%s\" -vn -ar 44100 -ac 2 -f ogg -acodec libvorbis \
@@ -134,6 +122,10 @@ def create_tasks(source, output, depth, config):
                     continue
 
                 out = os.path.join(dest, root[len(src):], name + format_dict[ext][1])
+
+                if not os.path.isdir(os.path.dirname(out)):
+                    os.makedirs(os.path.dirname(out))
+
                 tasks.append((format_dict[ext][0], elem, out, format_dict[ext][2]))
 
     return tasks
