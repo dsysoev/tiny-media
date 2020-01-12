@@ -23,23 +23,32 @@ def conv2jpg(src, dest, config):
     im.thumbnail(config['size'], Image.BICUBIC)
     try:
         exif = im.info['exif']
-        im.save(dest, "JPEG", exif=exif)
+        im.save(dest, "JPEG", exif=exif, quality=85)
     except:
-        im.save(dest, "JPEG")
+        im.save(dest, "JPEG", quality=85)
     return True
 
 def conv2video(src, dest, config):
 
-    command = "ffmpeg -y -i \"{}\" -vf scale=1280:720:force_original_aspect_ratio=decrease \
-        -c:v libvpx-vp9 -pass 1 -b:v 1000K -threads 8 \
-        -speed 4 -tile-columns 6 -frame-parallel 1 -an -f webm \
-        /dev/null;".format(src)
-    os.system(command)
+    # slow VP9
+    # first pass
+    # command = "ffmpeg -y -i \"{}\" -vf scale=1280:720:force_original_aspect_ratio=decrease \
+    #     -c:v libvpx-vp9 -pass 1 -b:v 1000K -threads 8 \
+    #     -speed 4 -tile-columns 6 -frame-parallel 1 -an -f webm \
+    #     /dev/null;".format(src)
+    # os.system(command)
+    # second pass
+    # command = "ffmpeg -i \"{}\" -vf scale=1280:720:force_original_aspect_ratio=decrease \
+    #     -c:v libvpx-vp9 -pass 2 -b:v 1000K -threads 8 \
+    #     -speed 2 -tile-columns 6 -frame-parallel 1 -auto-alt-ref 1 \
+    #     -lag-in-frames 25 -c:a libopus -b:a 64k -f webm \"{}\"".format(src, dest)
+    # os.system(command)
 
-    command = "ffmpeg -i \"{}\" -vf scale=1280:720:force_original_aspect_ratio=decrease \
-        -c:v libvpx-vp9 -pass 2 -b:v 1000K -threads 8 \
-        -speed 2 -tile-columns 6 -frame-parallel 1 -auto-alt-ref 1 \
-        -lag-in-frames 25 -c:a libopus -b:a 64k -f webm \"{}\"".format(src, dest)
+    # fast MP4
+    command = "ffmpeg -i \"{}\" -vf scale=854:480 \
+        -c:v libx264 -preset slow -pix_fmt yuv420p \
+        -b:v 1000K -minrate 500k -maxrate 2000k -bufsize 2000k \
+        -c:a aac -b:a 128k -f mp4 \"{}\"".format(src, dest)
     os.system(command)
     return True
 
@@ -58,9 +67,9 @@ def conv2folder(source, output, depth, force, config):
         (conv2jpg, '.jpg', ['.jpg', '.jpeg', '.tif',
                     '.tiff', '.png', '.bmp'], config['image']),
         (conv2gif, '.gif', ['.gif'], config['animation']),
-        (conv2video, '.webm', ['.mov', '.mp4', '.avi', '.3gp', '.wmv',
-                      '.webm', '.mts', '.m2ts', '.mpg', '.vob',
-                      '.ts', '.flv', '.mkv'], config['video']),
+        # (conv2video, '.mp4', ['.mov', '.mp4', '.avi', '.3gp', '.wmv',
+        #               '.webm', '.mts', '.m2ts', '.mpg', '.vob',
+        #               '.ts', '.flv', '.mkv'], config['video']),
         # (conv2audio, '.ogg', ['.flac', '.mp3', '.webm', '.mkv', '.mp4',
         #                 '.mov', '.ts', '.flv', '.avi'], config['audio']),
     ]
