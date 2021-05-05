@@ -43,7 +43,7 @@ def image_datetime(srcname):
     return datename.replace(':', '')[:8]
 
 
-def collect_view(src, out, force=False):
+def collect_view(src, out, force=False, template_name=''):
 
     if answer_bool("Move media from original source ?", force=force):
         action = shutil.move
@@ -65,6 +65,8 @@ def collect_view(src, out, force=False):
             srcname = os.path.join(root, filename)
             if not os.path.isfile(srcname):
                 continue
+            if srcname.endswith('.deletemarker'):
+                continue
             date = image_datetime(srcname)
             if date not in data:
                 data[date] = []
@@ -78,7 +80,7 @@ def collect_view(src, out, force=False):
             if ext.lower() in ['.jpg', '.jpeg', '.gif']:
                 display.append(filename)
 
-        if display:
+        if display and not template_name:
             ls = "'" + "' '".join(display) + "'"
             call = "montage {:} -auto-orient -geometry 200x200+5+5 -tile 5x -shadow :- | display".format(ls)
             os.system(call)
@@ -87,8 +89,12 @@ def collect_view(src, out, force=False):
         for filename in data[key]:
             print("{} {}".format('show' if filename in display else 'not show', filename))
 
-        answer = input('Set folder name ?\n{:}/{:} '.format(key[:4], key))
-        eventname = answer.strip()
+        eventname = "{:}/{:}".format(key[:4], key)
+        if not template_name:
+            answer = input('Set folder name ?\n{}'.format(eventname))
+            eventname = answer.strip()
+        else:
+            eventname = template_name
 
         for i, filename in enumerate(data[key]):
             foldername = os.path.join(out, key[:4], key + ' ' + eventname) + '/'
@@ -112,6 +118,7 @@ if __name__ in '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('src', type=str)
     parser.add_argument('dest', type=str)
+    parser.add_argument('-template_name', type=str, default='')
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args()
-    collect_view(args.src, args.dest, args.force)
+    collect_view(args.src, args.dest, args.force, args.template_name)
