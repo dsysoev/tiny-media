@@ -1,37 +1,59 @@
 
-import os
-import sys
-import glob
-import shutil
 import argparse
+import os
+import shutil
+import sys
+from typing import NoReturn, Tuple, Dict, List
 
-from PIL import Image
-from joblib import Parallel, delayed
+import numpy as np
+import torch
+import tqdm
+from torch.utils.data import Dataset, DataLoader
+from torchvision.io import read_image, write_jpeg
+from torchvision.transforms import v2
 
 
-def conv2gif(src, dest, config):
+class ImageDataset(Dataset):
+    """Image dataset."""
+
+    def __init__(self, tasks, transform=None):
+        """
+        Arguments:
+            tasks (List[Tuple[str, str]]): Tuple (input_path, output_path)
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.tasks = tasks
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.tasks)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        # print(idx)
+        src_path, target_path = self.tasks[idx]
+        # print(src_path)
+        try:
+            image = read_image(src_path)
+        except RuntimeError:
+            return {'image': np.zeros((1, 1, 1)), 'target_path': target_path}
+
+        if self.transform:
+            image = self.transform(image)
+
+        return {'image': image, 'target_path': target_path}
+
+
+def conv2gif(src: str, dest: str, config: Dict) -> bool:
 
     shutil.copy(src, dest)
     return True
 
-def conv2jpg(src, dest, config):
 
-    im = Image.open(src)
-    try:
-        im = im.convert("RGB")
-    except:
-        print('error convert {}'.format(src))
-        return False
-
-    im.thumbnail(config['size'], Image.BICUBIC)
-    try:
-        exif = im.info['exif']
-        im.save(dest, "JPEG", exif=exif, quality=config['quality'])
-    except:
-        im.save(dest, "JPEG", quality=config['quality'])
-    return True
-
-def conv2video(src, dest, config):
+def conv2video(src: str, dest: str, config: Dict) -> bool:
 
     # slow VP9
     # first pass
@@ -55,7 +77,8 @@ def conv2video(src, dest, config):
     os.system(command)
     return True
 
-def conv2audio(src, dest, config):
+
+def conv2audio(src: str, dest: str, config: Dict) -> bool:
 
     command = "ffmpeg -i \"{}\" -vn -f ogg -c:a libopus -b:a 96k \
         -map_metadata 0 -threads 8 -y \"{}\"".format(src, dest)
@@ -64,32 +87,11 @@ def conv2audio(src, dest, config):
     os.system(command)
     return True
 
-def create_tasks(source, output, depth, config):
 
-    # supported formats
-    formats = [
-        (conv2jpg, '.jpg', ['.jpg', '.jpeg', '.tif',
-                    '.tiff', '.png', '.bmp'], config['image']),
-        (conv2gif, '.gif', ['.gif'], config['animation']),
-        # (conv2video, '.mp4', ['.mov', '.mp4', '.avi', '.3gp', '.wmv',
-        #               '.webm', '.mts', '.m2ts', '.mpg', '.vob',
-        #               '.ts', '.flv', '.mkv'], config['video']),
-        # (conv2audio, '.ogg', ['.flac', '.mp3', '.webm', '.mkv', '.mp4',
-        #                 '.mov', '.ts', '.flv', '.avi'], config['audio']),
-    ]
-
-    # convert formats to dict structure
-    format_dict = {}
-    for form in formats:
-        for f in form[2]:
-            format_dict[f] = (form[0], form[1], form[3])
+def create_tasks(source: str, output: str, depth: int, config: Dict) -> Tuple[list[Tuple[str, str]], Dict[str, list]]:
 
     src = os.path.dirname(os.path.abspath(source) + '/') + '/'
     dest = os.path.abspath(output) + '/'
-
-    if depth < 0:
-        print('max_depth', depth, src)
-        return
 
     if not os.path.isdir(src):
         raise OSError('{} does not exist'.format(src))
@@ -103,63 +105,97 @@ def create_tasks(source, output, depth, config):
     print('src  : {}\ndest : {}\n'.format(src, dest))
 
     tasks = []
+    other = {}
     for root, dirs, files in sorted(os.walk(src)):
-        actual_depth = root[len(src):].count(os.sep)
-        if actual_depth < depth:
+        actual_depth = root[len(src):].count(os.sep) + 1
+        if actual_depth > depth:
+            continue
 
-            foldername = os.path.basename(os.path.normpath(root))
-            if '!' in foldername:
-                print('folder {} was skipped (! exist in name)'.format(root))
+        folder_name = os.path.basename(os.path.normpath(root))
+        if '!' in folder_name:
+            print('folder {} was skipped (! exist in name)'.format(root))
+            continue
+
+        for f in files:
+            elem = os.path.join(root, f)
+            name, ext = os.path.splitext(os.path.basename(elem))
+            ext = ext.lower()
+
+            if ext not in config['image']['ext_list']:
+                # format does not supported yet
+                if ext not in other:
+                    other[ext] = []
+                other[ext].append(elem)
                 continue
 
-            for f in files:
-                elem = os.path.join(root, f)
-                name, ext = os.path.splitext(os.path.basename(elem))
-                ext = ext.lower()
+            out = os.path.join(dest, root[len(src):], name + '.jpg')
 
-                if ext not in format_dict:
-                    # print('{} was skipped (format do not supported)'.format(elem))
-                    continue
+            if os.path.exists(out):
+                continue
 
-                out = os.path.join(dest, root[len(src):], name + format_dict[ext][1])
+            tasks.append((elem, out))
 
-                if os.path.isfile(out):
-                    continue
-
-                if not os.path.isdir(os.path.dirname(out)):
-                    os.makedirs(os.path.dirname(out))
-
-                tasks.append((format_dict[ext][0], elem, out, format_dict[ext][2]))
-
-    return tasks
+    return tasks, other
 
 
-def main(config):
+def dataset_thumbnail(tasks: List[Tuple[str, str]], config: Dict) -> NoReturn:
 
-    conf = {
-        'image': {'size': (1920, 1080), 'quality': 85},
-        'animation': {},
-        'video': {},
-        'audio': {},
-    }
+    resize = v2.Resize(size=config['image']['size'],
+                       antialias=True,
+                       interpolation=v2.InterpolationMode.BICUBIC)
 
-    tasks = create_tasks(
-        config.src,
-        config.dest,
-        depth=config.max_depth,
-        config=conf
-    )
+    dataset = ImageDataset(tasks=tasks, transform=resize)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=10)
 
-    print('number of tasks : {}'.format(len(tasks)))
-    results = Parallel(n_jobs=4, prefer="threads")(
-        delayed(task[0])(task[1], task[2], task[3]) for task in tasks)
-    print('Done')
+    quality = config['image']['quality']
+    for sample in tqdm.tqdm(dataloader):
+        target_path = sample['target_path'][0]
+        image = sample['image'][0]
+
+        if image.shape == (1, 1, 1):
+            print(f'error reading file {target_path}')
+            continue
+
+        dirname = os.path.dirname(target_path)
+        if not os.path.isdir(dirname):
+            os.makedirs(dirname)
+
+        try:
+            write_jpeg(image, target_path, quality=quality)
+        except RuntimeError:
+            print(f'error converting file {target_path}')
 
 
-if __name__ in '__main__':
+def main() -> NoReturn:
     parser = argparse.ArgumentParser()
     parser.add_argument('src', type=str)
     parser.add_argument('dest', type=str)
     parser.add_argument('--max_depth', type=int, default=2)
     args = parser.parse_args()
-    main(args)
+
+    config = {
+        'image': {'size': 960, 'quality': 85, 'ext_list': ['.jpg', '.png']},
+        'animation': {},
+        'video': {},
+        'audio': {},
+    }
+
+    tasks, other = create_tasks(
+        args.src,
+        args.dest,
+        args.max_depth,
+        config=config
+    )
+
+    print('number of tasks : {}'.format(len(tasks)))
+    for key, items in other.items():
+        print(f'file extension: "{key}" len: {len(items)}')
+
+    # converting images
+    dataset_thumbnail(tasks, config)
+
+    print('Done')
+
+
+if __name__ in '__main__':
+    main()

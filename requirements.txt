@@ -1,4 +1,4 @@
-pillow
+torchvision>=0.16
 exifread
-joblib
 deepface
+tqdm
