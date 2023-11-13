@@ -1,4 +1,3 @@
-
 import os
 import sys
 import shutil
@@ -28,23 +27,22 @@ def answer_bool(text, force=False):
         return False
 
 
-def image_datetime(srcname):
+def image_datetime(src):
     # Open image file for reading (binary mode)
-    with open(srcname, 'rb') as f:
+    with open(src, 'rb') as f:
         # Return Exif tags
         tags = exifread.process_file(f)
 
     if 'EXIF DateTimeOriginal' not in tags:
-        mtime = os.stat(srcname)[8]
+        mtime = os.stat(src)[8]
         t = datetime.datetime.fromtimestamp(mtime)
         return t.strftime('%Y%m%d')
 
-    datename = str(tags['EXIF DateTimeOriginal'])
-    return datename.replace(':', '')[:8]
+    date = str(tags['EXIF DateTimeOriginal'])
+    return date.replace(':', '')[:8]
 
 
 def collect_view(src, out, force=False, template_name=''):
-
     if answer_bool("Move media from original source ?", force=force):
         action = shutil.move
     else:
@@ -67,11 +65,16 @@ def collect_view(src, out, force=False, template_name=''):
                 continue
             if srcname.endswith('.deletemarker'):
                 continue
-            date = image_datetime(srcname)
+
+            try:
+                date = image_datetime(srcname)
+            except:
+                print('exif error into file {}'.format(srcname))
+                continue
+
             if date not in data:
                 data[date] = []
             data[date].append(srcname)
-
 
     for key in sorted(data):
         display = []
@@ -89,20 +92,20 @@ def collect_view(src, out, force=False, template_name=''):
         for filename in data[key]:
             print("{} {}".format('show' if filename in display else 'not show', filename))
 
-        eventname = "{:}/{:}".format(key[:4], key)
+        event = "{:}/{:}".format(key[:4], key)
         if not template_name:
-            answer = input('Set folder name ?\n{}'.format(eventname))
-            eventname = answer.strip()
+            answer = input('Set folder name ?\n{}'.format(event))
+            event = answer.strip()
         else:
-            eventname = template_name
+            event = template_name
 
         for i, filename in enumerate(data[key]):
-            foldername = os.path.join(out, key[:4], key + ' ' + eventname) + '/'
-            dirfolder = os.path.dirname(foldername)
-            outname = os.path.join(foldername, os.path.basename(filename))
+            folder = os.path.join(out, key[:4], key + ' ' + event) + '/'
+            dirfolder = os.path.dirname(folder)
+            outname = os.path.join(folder, os.path.basename(filename))
 
             if not os.path.exists(dirfolder):
-                if answer_bool("Create folder %s ?" % (dirfolder), force=force):
+                if answer_bool(f"Create folder {dirfolder} ?", force=force):
                     os.makedirs(dirfolder)
                 else:
                     break
@@ -114,7 +117,7 @@ def collect_view(src, out, force=False, template_name=''):
                 print('file {} already exist'.format(filename))
 
 
-if __name__ in '__main__':
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('src', type=str)
     parser.add_argument('dest', type=str)
@@ -122,3 +125,7 @@ if __name__ in '__main__':
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args()
     collect_view(args.src, args.dest, args.force, args.template_name)
+
+
+if __name__ in '__main__':
+    main()
