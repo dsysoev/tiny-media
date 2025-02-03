@@ -38,3 +38,10 @@ python face_recognition.py -img target.jpg -folder /path/to/photo/collection/ --
 # slow but more accurate preset
 python face_recognition.py -img target.jpg -folder /path/to/photo/collection/ --results results.csv --detector_backend retinaface
 ```
+
+
+## Stats
+
+```bash
+python stats.py -folder /path/to/folder/ --filename stats.csv
+```

@@ -10,7 +10,7 @@ if __name__ in '__main__':
     parser.add_argument('-folder', type=str, help='path to image database folder')
     parser.add_argument('--results', default='results.csv', type=str, help='path output file with results')
     parser.add_argument('--function', default='find', type=str)
-    parser.add_argument('--model', default='Facenet', type=str)
+    parser.add_argument('--model', default='Facenet512', type=str)
     parser.add_argument('--detector_backend', default='opencv', type=str)
     parser.add_argument('--prog_bar', default=False, type=bool)
     args = parser.parse_args()
